@@ -1,0 +1,49 @@
+{
+  "name": "pi-upgrade",
+  "version": "0.1.0",
+  "description": "Pi extension that adds a /upgrade command to self-upgrade pi",
+  "type": "module",
+  "files": [
+    "src/upgrade.ts",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "pi-package",
+    "pi",
+    "pi-coding-agent"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/maxpetretta/pi-upgrade.git"
+  },
+  "homepage": "https://github.com/maxpetretta/pi-upgrade#readme",
+  "bugs": {
+    "url": "https://github.com/maxpetretta/pi-upgrade/issues"
+  },
+  "scripts": {
+    "lint": "biome check .",
+    "fix": "biome check --write .",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test",
+    "check": "bun run lint && bun run typecheck && bun run test"
+  },
+  "peerDependencies": {
+    "@mariozechner/pi-coding-agent": "*"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.4.3",
+    "@mariozechner/pi-coding-agent": "0.60.0",
+    "@types/node": "22.19.15",
+    "typescript": "5.9.3"
+  },
+  "engines": {
+    "node": ">=20.6.0"
+  },
+  "pi": {
+    "extensions": [
+      "./src/upgrade.ts"
+    ]
+  }
+}
