@@ -154,11 +154,9 @@ export default function upgradeExtension(pi: ExtensionAPI) {
             : "pi was upgraded."
 
       ctx.ui.notify(
-        [
-          message,
-          "Restart pi to use the new version.",
-          "/reload only reloads extensions, skills, prompts, and themes.",
-        ].join("\n"),
+        [message, "Please restart pi to use the new version.", "Tip: run `pi -c` to continue your last session."].join(
+          "\n",
+        ),
         "info",
       )
     },
