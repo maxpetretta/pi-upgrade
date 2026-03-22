@@ -25,6 +25,8 @@ Flags:
 - `/upgrade --force` — reinstall even if already on latest
 - `/upgrade --dry-run` — show what would run without doing it
 
+After a successful upgrade, the extension shows a 5-second restart countdown and automatically relaunches pi on the current session in interactive TUI mode. In non-interactive modes, it falls back to the normal manual restart message.
+
 ### What it does
 
 1. Finds the running `pi` binary and walks up to its `package.json`
@@ -32,7 +34,8 @@ Flags:
 3. Prefers the package manager sibling to the current Node runtime
 4. Checks the npm registry for the latest published version
 5. Runs the appropriate global install command
-6. Tells you to restart pi afterward
+6. Automatically relaunches pi on the current session after a successful upgrade when interactive TUI mode is available
+7. Otherwise tells you to restart pi afterward
 
 ### Why restart?
 

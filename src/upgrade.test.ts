@@ -5,6 +5,10 @@ import path from "node:path"
 
 import type { ExecResult, ExtensionAPI } from "@mariozechner/pi-coding-agent"
 import upgradeExtension, {
+  buildInstallTypeLabel,
+  buildRestartArgs,
+  buildRestartCommand,
+  buildRestartCountdownLines,
   buildUpgradePlan,
   findPackageRoot,
   formatCommand,
@@ -69,6 +73,37 @@ test("getConfiguredNpmCommand parses configured wrapper commands", () => {
 
 test("formatCommand quotes arguments with spaces", () => {
   expect(formatCommand("npm", ["install", "pkg with spaces"])).toBe('npm install "pkg with spaces"')
+})
+
+test("buildInstallTypeLabel formats the install kind", () => {
+  expect(buildInstallTypeLabel("npm")).toBe("npm global package")
+  expect(buildInstallTypeLabel("bun")).toBe("bun global package")
+})
+
+test("buildRestartArgs prefers the exact session file", () => {
+  expect(buildRestartArgs("/tmp/session.jsonl")).toEqual(["--session", "/tmp/session.jsonl"])
+  expect(buildRestartArgs(undefined)).toEqual(["-c"])
+})
+
+test("buildRestartCommand uses cmd.exe on Windows and direct exec elsewhere", () => {
+  expect(buildRestartCommand("pi", "/tmp/session.jsonl", "darwin")).toEqual({
+    command: "pi",
+    args: ["--session", "/tmp/session.jsonl"],
+  })
+
+  expect(buildRestartCommand("C:\\Program Files\\pi.cmd", "C:\\sessions\\one.jsonl", "win32")).toEqual({
+    command: "cmd.exe",
+    args: ["/d", "/s", "/c", formatCommand("C:\\Program Files\\pi.cmd", ["--session", "C:\\sessions\\one.jsonl"])],
+  })
+})
+
+test("buildRestartCountdownLines updates the third line with the countdown", () => {
+  expect(buildRestartCountdownLines("Updated pi from v0.60.0 to v0.61.0.", 5)).toEqual([
+    "Updated pi from v0.60.0 to v0.61.0.",
+    "Please restart to use the new version.",
+    "Restarting pi in 5s",
+  ])
+  expect(buildRestartCountdownLines("pi is at v0.61.0.", 0).at(2)).toBe("Restarting pi in 0s")
 })
 
 test("tailText returns a readable final slice", () => {
@@ -146,6 +181,7 @@ test("registers /upgrade and dry-run reports the detected command", async () => 
     expect(notifications[0]?.message).toContain("Dry run")
     expect(notifications[0]?.message).toContain("Detected manager: bun")
     expect(notifications[0]?.message).toContain("bun add -g @mariozechner/pi-coding-agent@latest")
+    expect(notifications[0]?.message).toContain("Would restart pi on the current session after the upgrade.")
     expect(notifications[0]?.type).toBe("info")
   } finally {
     globalThis.fetch = originalFetch

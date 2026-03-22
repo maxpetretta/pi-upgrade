@@ -1,9 +1,17 @@
+import { spawnSync } from "node:child_process"
 import { existsSync, promises as fs, constants as fsConstants } from "node:fs"
 import path from "node:path"
-import { type ExecResult, type ExtensionAPI, SettingsManager } from "@mariozechner/pi-coding-agent"
+import {
+  type ExecResult,
+  type ExtensionAPI,
+  type ExtensionCommandContext,
+  SettingsManager,
+} from "@mariozechner/pi-coding-agent"
+import { Text } from "@mariozechner/pi-tui"
 
 export const PACKAGE_NAME = "@mariozechner/pi-coding-agent"
 export const UPGRADE_TIMEOUT_MS = 600_000
+export const UPGRADE_WIDGET_ID = "pi-upgrade-status"
 
 export type Manager = "npm" | "pnpm" | "yarn" | "bun"
 export type UpgradePlan = { manager: Manager; command: string; args: string[]; reason: string }
@@ -111,7 +119,13 @@ export default function upgradeExtension(pi: ExtensionAPI) {
 
       if (dryRun) {
         ctx.ui.notify(
-          ["Dry run — no changes made.", "", details, alreadyLatest && !force ? "\npi is already up to date." : ""]
+          [
+            "Dry run — no changes made.",
+            "",
+            details,
+            "\nWould restart pi on the current session after the upgrade.",
+            alreadyLatest && !force ? "\npi is already up to date." : "",
+          ]
             .filter(Boolean)
             .join("\n"),
           "info",
@@ -124,12 +138,21 @@ export default function upgradeExtension(pi: ExtensionAPI) {
         return
       }
 
-      ctx.ui.notify(`Upgrading pi via ${install.plan.manager}...\n\n${commandLine}`, "info")
+      const canAutoRestart = supportsAutoRestart(ctx)
+      if (canAutoRestart) {
+        setUpgradeWidget(ctx, [
+          `Upgrading pi via ${install.plan.manager}...`,
+          `Install: ${buildInstallTypeLabel(install.plan.manager)}`,
+        ])
+      } else {
+        ctx.ui.notify(`Upgrading pi via ${install.plan.manager}...\n\n${commandLine}`, "info")
+      }
 
       let result: ExecResult
       try {
         result = await pi.exec(install.plan.command, install.plan.args, { timeout: UPGRADE_TIMEOUT_MS })
       } catch (error) {
+        if (canAutoRestart) clearUpgradeWidget(ctx)
         ctx.ui.notify(
           `Upgrade failed to start.\n${error instanceof Error ? error.message : error}\n\nCommand:\n${commandLine}`,
           "error",
@@ -138,6 +161,7 @@ export default function upgradeExtension(pi: ExtensionAPI) {
       }
 
       if (result.code !== 0) {
+        if (canAutoRestart) clearUpgradeWidget(ctx)
         ctx.ui.notify(
           ["Upgrade failed.", `Command: ${commandLine}`, "", tailText(result.stderr || result.stdout)].join("\n"),
           "error",
@@ -153,11 +177,34 @@ export default function upgradeExtension(pi: ExtensionAPI) {
             ? `pi is at v${updated.currentVersion}.`
             : "pi was upgraded."
 
+      if (!canAutoRestart) {
+        ctx.ui.notify(
+          [message, "Please restart to use the new version.", "Tip: run `pi -c` to continue your last session."].join(
+            "\n",
+          ),
+          "info",
+        )
+        return
+      }
+
+      const restartResult = await restartPi(pi, ctx, message)
+      if (restartResult.ok) {
+        ctx.shutdown()
+        return
+      }
+
+      clearUpgradeWidget(ctx)
       ctx.ui.notify(
-        [message, "Please restart pi to use the new version.", "Tip: run `pi -c` to continue your last session."].join(
-          "\n",
-        ),
-        "info",
+        [
+          message,
+          "Auto-restart failed.",
+          restartResult.error,
+          "Please restart pi manually.",
+          "Tip: run `pi -c` to continue your last session.",
+        ]
+          .filter(Boolean)
+          .join("\n"),
+        "error",
       )
     },
   })
@@ -250,6 +297,37 @@ export function formatCommand(command: string, args: string[]): string {
   return [command, ...args].map(quote).join(" ")
 }
 
+export function buildRestartArgs(sessionFile: string | undefined): string[] {
+  return sessionFile ? ["--session", sessionFile] : ["-c"]
+}
+
+export function buildRestartCommand(
+  piBinary: string,
+  sessionFile: string | undefined,
+  platform: NodeJS.Platform = process.platform,
+): { command: string; args: string[] } {
+  const restartArgs = buildRestartArgs(sessionFile)
+  if (platform === "win32") {
+    return {
+      command: "cmd.exe",
+      args: ["/d", "/s", "/c", formatCommand(piBinary, restartArgs)],
+    }
+  }
+
+  return {
+    command: piBinary,
+    args: restartArgs,
+  }
+}
+
+export function buildInstallTypeLabel(manager: Manager): string {
+  return `${manager} global package`
+}
+
+export function buildRestartCountdownLines(message: string, secondsRemaining: number): string[] {
+  return [message, "Please restart to use the new version.", `Restarting pi in ${secondsRemaining}s`]
+}
+
 export function tailText(text: string): string {
   const trimmed = text.trim()
   if (!trimmed) return "No output."
@@ -271,6 +349,75 @@ export function getConfiguredNpmCommand(
   } catch {
     return null
   }
+}
+
+function supportsAutoRestart(ctx: ExtensionCommandContext): boolean {
+  return ctx.hasUI && !!process.stdin.isTTY && !!process.stdout.isTTY
+}
+
+function setUpgradeWidget(ctx: ExtensionCommandContext, lines: string[] | undefined): void {
+  ctx.ui.setWidget(
+    UPGRADE_WIDGET_ID,
+    lines
+      ? (_tui, theme) =>
+          new Text(
+            lines.map((line, index) => (index === 2 ? theme.fg("text", line) : theme.fg("muted", line))).join("\n"),
+            0,
+            0,
+          )
+      : undefined,
+  )
+}
+
+function clearUpgradeWidget(ctx: ExtensionCommandContext): void {
+  setUpgradeWidget(ctx, undefined)
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+async function restartPi(
+  pi: ExtensionAPI,
+  ctx: ExtensionCommandContext,
+  message: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  for (let secondsRemaining = 5; secondsRemaining >= 0; secondsRemaining -= 1) {
+    setUpgradeWidget(ctx, buildRestartCountdownLines(message, secondsRemaining))
+    if (secondsRemaining > 0) await sleep(1000)
+  }
+
+  const piBinary = (await which(pi, "pi")) ?? "pi"
+  const restartCommand = buildRestartCommand(piBinary, ctx.sessionManager.getSessionFile())
+
+  return ctx.ui.custom<{ ok: true } | { ok: false; error: string }>((tui, _theme, _kb, done) => {
+    tui.stop()
+
+    const result = spawnSync(restartCommand.command, restartCommand.args, {
+      cwd: ctx.cwd,
+      env: process.env,
+      stdio: "inherit",
+      windowsHide: false,
+    })
+
+    tui.start()
+    tui.requestRender(true)
+
+    if (result.error) {
+      done({ ok: false, error: result.error.message })
+    } else if (typeof result.status === "number" && result.status !== 0) {
+      done({ ok: false, error: `Restarted pi exited with code ${result.status}.` })
+    } else {
+      done({ ok: true })
+    }
+
+    return {
+      render: () => [],
+      invalidate: () => {
+        // No-op.
+      },
+    }
+  })
 }
 
 async function which(pi: ExtensionAPI, name: string): Promise<string | null> {
