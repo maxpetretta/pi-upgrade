@@ -140,10 +140,7 @@ export default function upgradeExtension(pi: ExtensionAPI) {
 
       const canAutoRestart = supportsAutoRestart(ctx)
       if (canAutoRestart) {
-        setUpgradeWidget(ctx, [
-          `Upgrading pi via ${install.plan.manager}...`,
-          `Install: ${buildInstallTypeLabel(install.plan.manager)}`,
-        ])
+        setUpgradeWidget(ctx, buildUpgradeWidgetLines(latestVersion, install.plan.manager))
       } else {
         ctx.ui.notify(`Upgrading pi via ${install.plan.manager}...\n\n${commandLine}`, "info")
       }
@@ -322,6 +319,13 @@ export function buildRestartCommand(
 
 export function buildInstallTypeLabel(manager: Manager): string {
   return `${manager} global package`
+}
+
+export function buildUpgradeWidgetLines(latestVersion: string | null, manager: Manager): string[] {
+  return [
+    latestVersion ? `Upgrading pi to v${latestVersion}...` : "Upgrading pi...",
+    `Install: ${buildInstallTypeLabel(manager)}`,
+  ]
 }
 
 export function buildRestartCountdownLines(message: string, secondsRemaining: number): string[] {

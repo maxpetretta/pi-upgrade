@@ -1,6 +1,6 @@
 {
   "name": "pi-upgrade",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Pi extension that adds a /upgrade command to self-upgrade pi",
   "type": "module",
   "files": [

@@ -10,6 +10,7 @@ import upgradeExtension, {
   buildRestartCommand,
   buildRestartCountdownLines,
   buildUpgradePlan,
+  buildUpgradeWidgetLines,
   findPackageRoot,
   formatCommand,
   getConfiguredNpmCommand,
@@ -78,6 +79,14 @@ test("formatCommand quotes arguments with spaces", () => {
 test("buildInstallTypeLabel formats the install kind", () => {
   expect(buildInstallTypeLabel("npm")).toBe("npm global package")
   expect(buildInstallTypeLabel("bun")).toBe("bun global package")
+})
+
+test("buildUpgradeWidgetLines shows the target version above the install type", () => {
+  expect(buildUpgradeWidgetLines("0.61.0", "bun")).toEqual([
+    "Upgrading pi to v0.61.0...",
+    "Install: bun global package",
+  ])
+  expect(buildUpgradeWidgetLines(null, "npm")).toEqual(["Upgrading pi...", "Install: npm global package"])
 })
 
 test("buildRestartArgs prefers the exact session file", () => {
